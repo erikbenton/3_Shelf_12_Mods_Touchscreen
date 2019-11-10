@@ -29,6 +29,29 @@ var mod9[4];
 var mod10[4];
 var mod11[4];
 
+func main()
+
+    // Mount the drive
+
+    // Basic initialization stuff
+
+    // Enter the forever loop
+    repeat
+
+        // Send Commands
+
+        // Read Commands
+
+        // Update the view
+
+        // Check for user input
+
+        // React to user input
+
+    forever
+
+endfunc
+
 func print_voltage(upper, lower, x_pos, y_pos)
 
     // Setting up float arrays
