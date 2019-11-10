@@ -1,7 +1,7 @@
 #platform "Gen4-uLCD-70DT"
 #inherit "4DGL_16bitColours.fnc"
 #inherit "VisualConst.inc"
-#inherit "Monitor_CERCDECConst.inc"
+#inherit "3Shelf12ModEnergyStorageUnitConst.inc"
 
 // Generic
 #constant ACTIVE        1
@@ -10,7 +10,7 @@
 #constant FALSE         0
 #constant OFFLINE       1
 #constant ONLINE        0
-
+#constant START_BYT     0x18
 // Colors
 #constant BACKGROUND_COLOR  0xDF5F
 #constant LED_GOOD          LIME
@@ -58,6 +58,8 @@ var shelf2[12];
 var shelves[3] := [shelf0, shelf1, shelf2];
 var current_shelf := 0;
 var *shelf_ptr;
+var shelf_volt[2];
+var shelf_temp[2];
 
 // Modules have 7 major characteristics
 // 1) Voltage, Float: 2 Bytes
@@ -109,6 +111,8 @@ var mods[36] := [mod0, mod1, mod2, mod3, mod4, mod5, mod6, mod7, mod8, mod9, mod
 var current_mod := 0;
 var *mod_ptr_1;
 var *mod_ptr_2;
+var mod_volt[2];
+var mod_temp[2];
 
 
 func main()
@@ -125,7 +129,7 @@ func main()
     endif
 
     // Get file handle
-    hndl := file_LoadImageControl("MONITO~1.dat", "MONITO~1.gci", 1);
+    hndl := file_LoadImageControl("3SHELF~1.dat", "3SHELF~1.gci", 1);
     
     // Basic initialization stuff
     gfx_Set(SCREEN_MODE, LANDSCAPE) ;
@@ -178,14 +182,7 @@ func calc_system_voltage()
     var i;
     for(i := 0; i < 3; i++)
 
-        // Create float for for voltage
-        var shelf_volt[2];
-        
-        // Get the shelf pointer
-        get_shelf(i);
-        
-        // Get the current shelf voltage
-        shelf_volt := calc_voltage(shelf_ptr[0]);
+        calc_shelf_voltage(i);
 
         // Add current shelf voltage to system voltage
         flt_ADD(sys_volt, sys_volt, shelf_volt); 
@@ -196,12 +193,12 @@ func calc_system_voltage()
 endfunc
 
 // Prints off the voltage given a 16 bit int
-func print_voltage(var volt_int, var x_pos, var y_pos)
+func print_shelf_voltage(var shelf, var x_pos, var y_pos)
 
     // Setting up float arrays
     var volt_flt[2];
 
-    volt_flt := calc_voltage(var volt_int);
+    calc_shelf_voltage(shelf);
 
     // Print it at desired location
     gfx_MoveTo(x_pos, y_pos);
@@ -209,8 +206,13 @@ func print_voltage(var volt_int, var x_pos, var y_pos)
 
 endfunc
 
-// Calculates the temperature given a 16 bit int
-func calc_voltage(var volt_int)
+// Calculates the voltage given a 16 bit int for a shelf
+func calc_shelf_voltage(var shelf)
+
+    get_shelf(shelf);
+    
+    var volt_int;
+    volt_int := shelf_ptr[0];
 
     // Setting up float arrays
     var volt_flt[2], temp_flt[2];
@@ -222,9 +224,24 @@ func calc_voltage(var volt_int)
     flt_VAL(temp_flt, "0.02");
     
     // (voltage = [0xUpperByte,0xLowerByte] * 0.02)
-    flt_MUL(volt_flt, volt_flt, temp_flt);
+    flt_MUL(shelf_volt, volt_flt, temp_flt);
 
-    return volt_flt;
+endfunc
+
+// Calculates the voltage given a 16 bit int for a mod
+func calc_mod_voltage(var volt_int)
+
+    // Setting up float arrays
+    var volt_flt[2], temp_flt[2];
+    
+    // Convert to float
+    flt_ITOF(volt_flt, volt_int);
+
+    // Create multiplication factor
+    flt_VAL(temp_flt, "0.02");
+    
+    // (voltage = [0xUpperByte,0xLowerByte] * 0.02)
+    flt_MUL(volt_mod, volt_flt, temp_flt);
 
 endfunc
 
@@ -250,7 +267,7 @@ func calc_temperature(var temp_int)
     flt_ITOF(temp_flt_2, temp_int);
     flt_MUL(temp_flt_1, temp_flt_1, temp_flt_2);
 
-    return temp_flt;
+    return temp_flt_1;
 
 endfunc
 
@@ -331,7 +348,7 @@ func request_all_shelf_mods(var shelf)
     var mods_per_shelf := 12;
 
     var i;
-    for(int i := 0; i < mods_per_shelf; i += 2)
+    for(i := 0; i < mods_per_shelf; i += 2)
         // Send request for each mod on current shelf
         request_mod(shelf, i);
         // pause(5);
@@ -346,6 +363,7 @@ func process_input()
     var temp_vals[15];
     var shelf_number;
     var mod_number;
+    var i;
 
     if(com1_Count() > dataByteCount)
         
@@ -360,7 +378,6 @@ func process_input()
             // If there isn't enough data
             // in the buffer for a full message
             if(com1_Count() < dataByteCount)
-                comCount := com1_Count();
                 return; // Leave function
             endif
 
@@ -395,7 +412,7 @@ func process_input()
             
             // See who the message is for
             shelf_number := temp_vals[ID];
-            mod_number := ((temp_vals[TYPE] | 0xF0) & 0x0F)
+            mod_number := ((temp_vals[TYPE] | 0xF0) & 0x0F);
             
             // Get their attention
             get_mods(shelf_number, mod_number);
