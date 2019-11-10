@@ -1,15 +1,37 @@
+#platform "Gen4-uLCD-70DT"
+#inherit "4DGL_16bitColours.fnc"
+#inherit "VisualConst.inc"
+#inherit "Monitor_CERCDECConst.inc"
+
+// Generic
+#constant ACTIVE        1
+#constant INACTIVE      0
+#constant TRUE          1
+#constant FALSE         0
+#constant OFFLINE       1
+#constant ONLINE        0
+
+// Colors
+#constant BACKGROUND_COLOR  0xDF5F
+#constant LED_GOOD          LIME
+#constant LED_IDLE          0x34DF
+#constant LED_BAD           RED
+
+// Forms
 #constant OVERVIEW_FORM 0
 #constant SHELF_FORM 1
 #constant MOD_FORM 2
 var current_form := OVERVIEW_FORM;
 var prev_form := OVERVIEW_FORM;
 
+// Indices
 #constant TYPE  2
 #constant ID    3
 #constant MOD_V 4
 #constant MOD_T 6
 #constant MOD_A 7
 
+// TODO: Add indices to indexers
 #constant SHELF_V
 #constant SHELF_T
 #constant SHELF_H
@@ -18,76 +40,107 @@ var prev_form := OVERVIEW_FORM;
 #constant SHELF_A
 #constant SHELF_E
 
-// Shelves have 8 major characteristics
+// Structures
+
+// Shelves have 9 major characteristics
 // 1) Total Voltage, Float: 2 Bytes
 // 2) Avg. Temp, Int: 1 Byte
 // 3) Highest Temp, Float: 1 Byte
 // 4) Lowest Temp, Float: 1 Bytes
 // 5) ID Highest/Lowest Temp, Int: 1 Byte
-var shelf0[8];
-var shelf1[8];
-var shelf2[8];
+// 6) X Position,  Int: 1 Byte
+// 7) Y Position,  Int: 1 Byte
+// 8) Good Button handle, Ptr: 1 Byte
+// 9) Bad Button handle, Ptr: 1 Byte
+var shelf0[12];
+var shelf1[12];
+var shelf2[12];
 var shelves[3] := [shelf0, shelf1, shelf2];
 var current_shelf := 0;
 var *shelf_ptr;
 
-// Modules have 3 major characteristics
+// Modules have 7 major characteristics
 // 1) Voltage, Float: 2 Bytes
 // 2) Temperature, Int: 1 Byte
 // 3) Alarm/Error, Int: 1 Byte
-var mod0[4];
-var mod1[4];
-var mod2[4];
-var mod3[4];
-var mod4[4];
-var mod5[4];
-var mod6[4];
-var mod7[4];
-var mod8[4];
-var mod9[4];
-var mod10[4];
-var mod11[4];
-var mod12[4];
-var mod13[4];
-var mod14[4];
-var mod15[4];
-var mod16[4];
-var mod17[4];
-var mod18[4];
-var mod19[4];
-var mod20[4];
-var mod21[4];
-var mod22[4];
-var mod23[4];
-var mod24[4];
-var mod25[4];
-var mod26[4];
-var mod27[4];
-var mod28[4];
-var mod29[4];
-var mod30[4];
-var mod31[4];
-var mod32[4];
-var mod33[4];
-var mod34[4];
-var mod35[4];
-var mods[36] := [mod0, mod1, mod2, mod3, mod4, mod5, mod6, mod7, mod8, mod9, mod10, mod11, mod12, mod13, mod14, mod15, mod16, mod17, mod18, mod19, mod20, mod21, mod22, mod23, mod24, mod25, mod26, mod27, mod28, mod29, mod30, mod31, mod32, mod33, mod34, mod35];
+// 4) X Position,  Int: 1 Byte
+// 5) Y Position,  Int: 1 Byte
+// 6) Good Button handle, Ptr: 1 Byte
+// 7) Bad Button handle, Ptr: 1 Byte
+var mod0[8];
+var mod1[8];
+var mod2[8];
+var mod3[8];
+var mod4[8];
+var mod5[8];
+var mod6[8];
+var mod7[8];
+var mod8[8];
+var mod9[8];
+var mod10[8];
+var mod11[8];
+var mod12[8];
+var mod13[8];
+var mod14[8];
+var mod15[8];
+var mod16[8];
+var mod17[8];
+var mod18[8];
+var mod19[8];
+var mod20[8];
+var mod21[8];
+var mod22[8];
+var mod23[8];
+var mod24[8];
+var mod25[8];
+var mod26[8];
+var mod27[8];
+var mod28[8];
+var mod29[8];
+var mod30[8];
+var mod31[8];
+var mod32[8];
+var mod33[8];
+var mod34[8];
+var mod35[8];
+var mods[36] := [mod0, mod1, mod2, mod3, mod4, mod5, mod6, mod7, mod8, mod9, mod10, mod11,
+                 mod12, mod13, mod14, mod15, mod16, mod17, mod18, mod19, mod20, mod21, mod22, mod23,
+                 mod24, mod25, mod26, mod27, mod28, mod29, mod30, mod31, mod32, mod33, mod34, mod35];
 var current_mod := 0;
 var *mod_ptr_1;
 var *mod_ptr_2;
 
+
 func main()
 
     // Mount the drive
+    putstr("Mounting...\n");
+    if (!(file_Mount()))
+        while(!(file_Mount()))
+            putstr("Drive not mounted...");
+            pause(200);
+            gfx_Cls();
+            pause(200);
+        wend
+    endif
 
+    // Get file handle
+    hndl := file_LoadImageControl("MONITO~1.dat", "MONITO~1.gci", 1);
+    
     // Basic initialization stuff
+    gfx_Set(SCREEN_MODE, LANDSCAPE) ;
 
     // Enter the forever loop
     repeat
 
         // Send Commands
+        if(current_form == SHELF_FORM || current_form == MOD_FORM)
 
+            request_all_shelf_mods(current_shelf);
+
+        endif
         // Read Commands
+        process_input();
 
         // Update the view
 
@@ -223,26 +276,6 @@ func set_shelf(var data)
 
 endfunc
 
-// Requests the basic module info
-// Sends out the "B#" command
-func request_mod(var shelf, var mod)
-
-    var cmd[7];
-    cmd[0] := 0x18;
-    cmd[1] := 0xEA;
-    cmd[2] := shelf;
-    cmd[3] := 0x0F;
-    cmd[4] := (0xB0) + (mod/2);
-    cmd[5] := 0xFF;
-    cmd[6] := 0x00;
-
-    var i;
-    for(i := 0; i < 7; i++)
-        serout1(cmd[i]);
-    next
-
-endfunc
-
 // Basic Mod Get/Set
 // Sets the global mod_ptr_1 to 'even' mod (0, 2, 4, ...)
 // Sets the global mod_ptr_2 to 'odd' mod (1, 3, 5, ...)
@@ -270,6 +303,39 @@ func set_mods(var data)
     // Get the Alarm/Error
     mod_ptr_1[3] := data[MOD_A];
     mod_ptr_2[3] := data[MOD_A + 4];
+endfunc
+
+// Requests the basic module info
+// Sends out the "B#" command
+func request_mod(var shelf, var mod)
+
+    var cmd[7];
+    cmd[0] := 0x18;
+    cmd[1] := 0xEA;
+    cmd[2] := shelf;
+    cmd[3] := 0x0F;
+    cmd[4] := (0xB0) + (mod/2);
+    cmd[5] := 0xFF;
+    cmd[6] := 0x00;
+
+    var i;
+    for(i := 0; i < 7; i++)
+        serout1(cmd[i]);
+    next
+
+endfunc
+
+// Sends a request for all the mods on the current shelf
+func request_all_shelf_mods(var shelf)
+
+    var mods_per_shelf := 12;
+
+    var i;
+    for(int i := 0; i < mods_per_shelf; i += 2)
+        // Send request for each mod on current shelf
+        request_mod(shelf, i);
+        // pause(5);
+    next
 endfunc
 
 // Handles input messages
@@ -338,4 +404,17 @@ func process_input()
             set_mods(temp_vals);          
         endif
     endif
+endfunc
+
+// Changes the buttons for status updates (aka Green button -> Red)
+// *Assumes the 'enable button' is being drawn on top of 'disable button'
+func update_button(var button_enable_idx, var button_disable_idx, var x_pos, var y_pos)
+    // Disable 'disable button'
+    img_SetAttributes(hndl, button_disable_idx, I_TOUCH_DISABLE);
+    // Set position for 'enable button'
+    img_SetPosition(hndl, button_enable_idx, x_pos, y_pos);
+    // Enable touch
+    img_ClearAttributes(hndl, button_enable_idx, I_TOUCH_DISABLE);
+    // Show the button (assumed on top of 'disable button')
+    img_Show(hndl, button_enable_idx);
 endfunc
